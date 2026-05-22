@@ -88,10 +88,21 @@
   .collapse-group.open .chevron { transform: rotate(90deg); }
   .collapse-body { display: none; padding: 0 16px 12px; }
   .collapse-group.open .collapse-body { display: block; }
-  .restock-item { padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+  .restock-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 11px 0; border-bottom: 1px solid rgba(255,255,255,0.04);
+    cursor: pointer;
+  }
   .restock-item:last-child { border-bottom: none; }
-  .restock-item h4 { font-size: 15px; font-weight: 600; }
-  .restock-item .qty { font-size: 13px; color: var(--yellow); margin-top: 2px; }
+  .restock-check {
+    width: 22px; height: 22px; flex-shrink: 0;
+    accent-color: var(--green); cursor: pointer;
+  }
+  .restock-name { flex: 1; font-size: 15px; font-weight: 500; }
+  .restock-qty { font-size: 15px; font-weight: 700; color: var(--yellow); flex-shrink: 0; }
+  .restock-item.checked .restock-name { text-decoration: line-through; color: var(--text-dim); }
+  .restock-item.checked .restock-qty { color: var(--text-dim); }
+  .restock-empty { padding: 11px 0; color: var(--text-dim); font-size: 14px; }
 
   /* Location cards */
   .location-grid {
@@ -625,20 +636,16 @@ function renderRestock() {
 
     let body;
     if (count > 0) {
-      body = items.map(item => {
-        const unit = item.drink.fridge_unit;
-        return `
-          <div class="restock-item">
-            <h4>${item.drink.name}</h4>
-            <div class="qty">Grab <strong>${item.needed}</strong> ${unit}${item.needed !== 1 ? 's' : ''} from store room</div>
-            <div style="font-size:12px;color:var(--text-dim);margin-top:4px">
-              On hand: ${item.onHand} · Par: ${item.par}
-            </div>
-          </div>
-        `;
-      }).join('');
+      body = items.map(item => `
+          <label class="restock-item">
+            <input type="checkbox" class="restock-check"
+              onchange="this.closest('.restock-item').classList.toggle('checked', this.checked)">
+            <span class="restock-name">${item.drink.name}</span>
+            <span class="restock-qty">× ${item.needed}</span>
+          </label>
+        `).join('');
     } else {
-      body = `<div class="restock-item" style="color:var(--text-dim)">${locCounted ? 'Everything at par — nothing to restock.' : 'Not counted yet.'}</div>`;
+      body = `<div class="restock-empty">${locCounted ? 'Everything at par — nothing to restock.' : 'Not counted yet.'}</div>`;
     }
 
     html += `
