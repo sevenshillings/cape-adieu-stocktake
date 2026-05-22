@@ -61,18 +61,37 @@
   }
   .home-hero h2 { font-size: 22px; margin-bottom: 4px; }
   .home-hero p { color: var(--text-dim); font-size: 14px; }
-  .session-banner {
-    margin: 0 16px 24px; padding: 14px 16px;
-    background: var(--surface2); border-radius: var(--radius);
-    display: flex; justify-content: space-between; align-items: center;
+
+  /* Collapsible location groups (restock) */
+  .collapse-group {
+    margin: 8px 16px; background: var(--surface);
+    border-radius: var(--radius); border: 1px solid rgba(255,255,255,0.04);
+    overflow: hidden;
   }
-  .session-banner .label { font-size: 13px; color: var(--text-dim); }
-  .session-banner .value { font-size: 15px; font-weight: 600; }
-  .session-banner .btn-new {
-    background: var(--accent); border: none; color: white;
-    padding: 8px 16px; border-radius: 8px; font-size: 14px;
-    font-weight: 600; cursor: pointer;
+  .collapse-header {
+    width: 100%; background: none; border: none; color: var(--text);
+    padding: 16px; display: flex; align-items: center; gap: 12px;
+    cursor: pointer; text-align: left;
   }
+  .collapse-header:active { background: var(--surface2); }
+  .collapse-title { font-size: 16px; font-weight: 600; flex: 1; }
+  .collapse-count {
+    background: var(--surface2); padding: 3px 10px; border-radius: 20px;
+    font-size: 12px; font-weight: 600; color: var(--text-dim);
+  }
+  .collapse-count.need { background: rgba(245,166,35,0.15); color: var(--yellow); }
+  .collapse-count.done { background: rgba(78,204,163,0.15); color: var(--green); }
+  .collapse-header .chevron {
+    font-size: 13px; color: var(--text-dim);
+    transition: transform 0.2s; flex-shrink: 0;
+  }
+  .collapse-group.open .chevron { transform: rotate(90deg); }
+  .collapse-body { display: none; padding: 0 16px 12px; }
+  .collapse-group.open .collapse-body { display: block; }
+  .restock-item { padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+  .restock-item:last-child { border-bottom: none; }
+  .restock-item h4 { font-size: 15px; font-weight: 600; }
+  .restock-item .qty { font-size: 13px; color: var(--yellow); margin-top: 2px; }
 
   /* Location cards */
   .location-grid {
@@ -266,12 +285,6 @@
       <h2>Tonight's Stocktake</h2>
       <p id="sessionDate"></p>
     </div>
-    <div class="session-banner" id="sessionBanner">
-      <div>
-        <div class="label">Session</div>
-        <div class="value" id="sessionStatus">Loading...</div>
-      </div>
-    </div>
     <div class="section-title">Select your location</div>
     <div class="location-grid" id="locationGrid"></div>
   </div>
@@ -394,15 +407,12 @@ async function init() {
       });
     }
 
-    document.getElementById('sessionStatus').textContent =
-      session.status === 'open' ? 'Open' : 'Closed';
-
     renderLocations();
     document.getElementById('navTabs').style.display = 'flex';
 
   } catch (err) {
     console.error(err);
-    document.getElementById('sessionStatus').textContent = 'Error loading';
+    toast('Error loading — pull to refresh');
   }
 }
 
@@ -579,18 +589,21 @@ async function saveCounts() {
 
 // ── Restock view ──
 function renderRestock() {
-  // For each fridge location, show what needs restocking from store room
+  // One collapsible group per fridge location. Collapsed by default —
+  // the item list only shows when the crew taps the location header.
   const fridgeLocs = locations.filter(l => l.id !== 5); // Everything except Store Room
   let html = '';
-  let hasItems = false;
+  let anyCounted = false;
 
   fridgeLocs.forEach(loc => {
     const items = [];
     const drinkIds = pars.filter(p => p.location_id === loc.id).map(p => p.drink_id);
+    let locCounted = false;
 
     drinkIds.forEach(did => {
       const key = `${did}-${loc.id}`;
       if (countValues[key] === undefined) return;
+      locCounted = true;
 
       const par = pars.find(p => p.drink_id === did && p.location_id === loc.id);
       if (!par || par.par_level <= 0) return;
@@ -604,13 +617,18 @@ function renderRestock() {
       }
     });
 
-    if (items.length > 0) {
-      hasItems = true;
-      html += `<div class="section-title">${loc.name}</div>`;
-      items.forEach(item => {
+    if (locCounted) anyCounted = true;
+
+    const count = items.length;
+    const badgeClass = count > 0 ? 'need' : 'done';
+    const badgeText = count > 0 ? `${count} to restock` : 'At par';
+
+    let body;
+    if (count > 0) {
+      body = items.map(item => {
         const unit = item.drink.fridge_unit;
-        html += `
-          <div class="restock-card">
+        return `
+          <div class="restock-item">
             <h4>${item.drink.name}</h4>
             <div class="qty">Grab <strong>${item.needed}</strong> ${unit}${item.needed !== 1 ? 's' : ''} from store room</div>
             <div style="font-size:12px;color:var(--text-dim);margin-top:4px">
@@ -618,15 +636,32 @@ function renderRestock() {
             </div>
           </div>
         `;
-      });
+      }).join('');
+    } else {
+      body = `<div class="restock-item" style="color:var(--text-dim)">${locCounted ? 'Everything at par — nothing to restock.' : 'Not counted yet.'}</div>`;
     }
+
+    html += `
+      <div class="collapse-group" id="restock-loc-${loc.id}">
+        <button class="collapse-header" onclick="toggleRestockLoc(${loc.id})">
+          <span class="collapse-title">${loc.name}</span>
+          <span class="collapse-count ${badgeClass}">${badgeText}</span>
+          <span class="chevron">▶</span>
+        </button>
+        <div class="collapse-body">${body}</div>
+      </div>
+    `;
   });
 
-  if (!hasItems) {
-    html = `<div class="empty-state"><div class="icon">✅</div>All fridges at par — nothing to restock</div>`;
+  if (!anyCounted) {
+    html = `<div class="empty-state"><div class="icon">📋</div>No counts yet — count a location first</div>`;
   }
 
   document.getElementById('restockList').innerHTML = html;
+}
+
+function toggleRestockLoc(locId) {
+  document.getElementById(`restock-loc-${locId}`).classList.toggle('open');
 }
 
 // ── Order view ──
