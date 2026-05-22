@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#1a1a2e">
+<title>Cape Adieu — Drinks Stocktake</title>
+<link rel="manifest" href="data:application/json;base64,eyJuYW1lIjoiQ2FwZSBBZGlldSBEcmlua3MiLCJzaG9ydF9uYW1lIjoiU3RvY2t0YWtlIiwiZGlzcGxheSI6InN0YW5kYWxvbmUiLCJiYWNrZ3JvdW5kX2NvbG9yIjoiIzFhMWEyZSIsInRoZW1lX2NvbG9yIjoiIzFhMWEyZSJ9">
+<style>
+  :root {
+    --bg: #1a1a2e;
+    --surface: #16213e;
+    --surface2: #0f3460;
+    --accent: #e94560;
+    --accent2: #f5a623;
+    --text: #eee;
+    --text-dim: #8892a4;
+    --green: #4ecca3;
+    --red: #e94560;
+    --yellow: #f5a623;
+    --radius: 12px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg); color: var(--text);
+    min-height: 100dvh; overflow-x: hidden;
+  }
+
+  /* Header */
+  .header {
+    background: var(--surface);
+    padding: 16px 20px;
+    display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    position: sticky; top: 0; z-index: 100;
+  }
+  .header h1 { font-size: 18px; font-weight: 600; }
+  .header .subtitle { font-size: 12px; color: var(--text-dim); }
+  .header-back {
+    background: none; border: none; color: var(--text); font-size: 24px;
+    cursor: pointer; padding: 4px 8px; margin-left: -8px;
+  }
+  .header-right { display: flex; gap: 8px; }
+  .btn-icon {
+    background: var(--surface2); border: none; color: var(--text);
+    width: 36px; height: 36px; border-radius: 8px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; font-size: 18px;
+  }
+
+  /* Screens */
+  .screen { display: none; padding-bottom: 100px; }
+  .screen.active { display: block; }
+
+  /* Home screen */
+  .home-hero {
+    padding: 32px 20px 24px;
+    text-align: center;
+  }
+  .home-hero h2 { font-size: 22px; margin-bottom: 4px; }
+  .home-hero p { color: var(--text-dim); font-size: 14px; }
+  .session-banner {
+    margin: 0 16px 24px; padding: 14px 16px;
+    background: var(--surface2); border-radius: var(--radius);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .session-banner .label { font-size: 13px; color: var(--text-dim); }
+  .session-banner .value { font-size: 15px; font-weight: 600; }
+  .session-banner .btn-new {
+    background: var(--accent); border: none; color: white;
+    padding: 8px 16px; border-radius: 8px; font-size: 14px;
+    font-weight: 600; cursor: pointer;
+  }
+
+  /* Location cards */
+  .location-grid {
+    padding: 0 16px;
+    display: grid; gap: 12px;
+  }
+  .loc-card {
+    background: var(--surface); border-radius: var(--radius);
+    padding: 18px 16px; cursor: pointer;
+    display: flex; align-items: center; gap: 14px;
+    transition: transform 0.15s, background 0.15s;
+    border: 1px solid rgba(255,255,255,0.04);
+  }
+  .loc-card:active { transform: scale(0.98); background: var(--surface2); }
+  .loc-icon {
+    width: 44px; height: 44px; border-radius: 10px;
+    background: var(--surface2);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; flex-shrink: 0;
+  }
+  .loc-info { flex: 1; }
+  .loc-info h3 { font-size: 16px; font-weight: 600; }
+  .loc-info p { font-size: 13px; color: var(--text-dim); margin-top: 2px; }
+  .loc-badge {
+    background: var(--surface2); padding: 4px 10px; border-radius: 20px;
+    font-size: 12px; color: var(--text-dim); font-weight: 500;
+  }
+  .loc-badge.done { background: rgba(78,204,163,0.15); color: var(--green); }
+
+  /* Count screen */
+  .count-header-info {
+    padding: 16px 20px 8px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .count-header-info .progress { font-size: 13px; color: var(--text-dim); }
+  .progress-bar {
+    height: 3px; background: var(--surface2);
+    margin: 0 20px 8px; border-radius: 2px; overflow: hidden;
+  }
+  .progress-bar .fill {
+    height: 100%; background: var(--green);
+    transition: width 0.3s ease;
+  }
+  .category-section { margin: 16px 0 8px; padding: 0 20px; }
+  .category-label {
+    font-size: 12px; font-weight: 700; color: var(--accent);
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .drink-row {
+    padding: 12px 20px;
+    display: flex; align-items: center; gap: 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+  }
+  .drink-row.counted { opacity: 0.6; }
+  .drink-row.adjusted .count-val { border-color: var(--yellow); color: var(--yellow); }
+  .drink-row.adjusted .drink-name { color: var(--yellow); }
+  .drink-info { flex: 1; min-width: 0; }
+  .drink-name { font-size: 15px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .drink-meta { font-size: 12px; color: var(--text-dim); margin-top: 1px; }
+  .count-input-wrap {
+    display: flex; align-items: center; gap: 0; flex-shrink: 0;
+  }
+  .count-btn {
+    width: 36px; height: 40px;
+    background: var(--surface2); border: none; color: var(--text);
+    font-size: 20px; font-weight: 600; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .count-btn:first-child { border-radius: 8px 0 0 8px; }
+  .count-btn:last-child { border-radius: 0 8px 8px 0; }
+  .count-btn:active { background: var(--accent); }
+  .count-val {
+    width: 50px; height: 40px; text-align: center;
+    background: var(--surface); border: 1px solid rgba(255,255,255,0.1);
+    color: var(--text); font-size: 16px; font-weight: 600;
+    border-left: none; border-right: none;
+    -moz-appearance: textfield;
+  }
+  .count-val::-webkit-inner-spin-button { display: none; }
+
+  /* Save bar */
+  .save-bar {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    padding: 12px 16px; padding-bottom: max(12px, env(safe-area-inset-bottom));
+    background: var(--surface);
+    border-top: 1px solid rgba(255,255,255,0.06);
+    display: flex; gap: 10px; z-index: 100;
+  }
+  .btn-save {
+    flex: 1; padding: 14px;
+    background: var(--green); color: #1a1a2e;
+    border: none; border-radius: 10px;
+    font-size: 16px; font-weight: 700; cursor: pointer;
+  }
+  .btn-save:disabled { opacity: 0.4; }
+  .btn-secondary {
+    padding: 14px 20px;
+    background: var(--surface2); color: var(--text);
+    border: none; border-radius: 10px;
+    font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+
+  /* Restock & Order views */
+  .restock-card, .order-card {
+    margin: 8px 16px;
+    background: var(--surface); border-radius: var(--radius);
+    padding: 14px 16px;
+    border: 1px solid rgba(255,255,255,0.04);
+  }
+  .restock-card h4, .order-card h4 { font-size: 15px; font-weight: 600; }
+  .restock-card .qty { font-size: 13px; color: var(--yellow); margin-top: 2px; }
+  .order-card .row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+  }
+  .order-card .row:last-child { border: none; }
+  .order-qty-input {
+    width: 60px; height: 36px; text-align: center;
+    background: var(--bg); border: 1px solid var(--yellow);
+    color: var(--text); font-size: 15px; font-weight: 600;
+    border-radius: 8px;
+  }
+
+  .section-title {
+    padding: 20px 20px 8px;
+    font-size: 13px; font-weight: 700;
+    color: var(--text-dim); text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .empty-state {
+    text-align: center; padding: 40px 20px;
+    color: var(--text-dim); font-size: 15px;
+  }
+  .empty-state .icon { font-size: 40px; margin-bottom: 12px; }
+
+  /* Nav tabs (bottom) */
+  .nav-tabs {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    background: var(--surface);
+    border-top: 1px solid rgba(255,255,255,0.06);
+    display: flex; z-index: 100;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .nav-tab {
+    flex: 1; padding: 10px 0 8px; text-align: center;
+    background: none; border: none; color: var(--text-dim);
+    cursor: pointer; font-size: 11px;
+  }
+  .nav-tab .icon { font-size: 22px; display: block; margin-bottom: 2px; }
+  .nav-tab.active { color: var(--accent); }
+
+  /* Loading */
+  .loading {
+    display: flex; align-items: center; justify-content: center;
+    padding: 60px 20px; color: var(--text-dim);
+  }
+  .spinner {
+    width: 24px; height: 24px; border: 3px solid var(--surface2);
+    border-top-color: var(--accent); border-radius: 50%;
+    animation: spin 0.8s linear infinite; margin-right: 12px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Toast */
+  .toast {
+    position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+    background: var(--green); color: #1a1a2e; padding: 12px 24px;
+    border-radius: 10px; font-weight: 600; font-size: 14px;
+    z-index: 200; opacity: 0; transition: opacity 0.3s;
+    pointer-events: none;
+  }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <!-- HEADER -->
+  <div class="header">
+    <div>
+      <h1 id="headerTitle">Drinks Stocktake</h1>
+      <div class="subtitle" id="headerSubtitle">Cape Adieu</div>
+    </div>
+    <div class="header-right" id="headerRight"></div>
+  </div>
+
+  <!-- HOME SCREEN -->
+  <div class="screen active" id="homeScreen">
+    <div class="home-hero">
+      <h2>Tonight's Stocktake</h2>
+      <p id="sessionDate"></p>
+    </div>
+    <div class="session-banner" id="sessionBanner">
+      <div>
+        <div class="label">Session</div>
+        <div class="value" id="sessionStatus">Loading...</div>
+      </div>
+    </div>
+    <div class="section-title">Select your location</div>
+    <div class="location-grid" id="locationGrid"></div>
+  </div>
+
+  <!-- COUNT SCREEN -->
+  <div class="screen" id="countScreen">
+    <div class="count-header-info">
+      <span id="countLocation" style="font-weight:600"></span>
+      <span class="progress" id="countProgress"></span>
+    </div>
+    <div class="progress-bar"><div class="fill" id="progressFill"></div></div>
+    <div id="drinksList"></div>
+    <div class="save-bar" id="countSaveBar">
+      <button class="btn-save" id="btnSaveCounts" onclick="saveCounts()">Save Counts</button>
+    </div>
+  </div>
+
+  <!-- RESTOCK SCREEN -->
+  <div class="screen" id="restockScreen">
+    <div class="section-title">Restock from Store Room</div>
+    <div id="restockList"></div>
+  </div>
+
+  <!-- ORDER SCREEN -->
+  <div class="screen" id="orderScreen">
+    <div class="section-title">Order Suggestions</div>
+    <div id="orderList"></div>
+    <div class="save-bar" id="orderSaveBar" style="display:none">
+      <button class="btn-save" onclick="saveOrders()">Confirm Orders</button>
+    </div>
+  </div>
+
+  <!-- NAV TABS -->
+  <div class="nav-tabs" id="navTabs" style="display:none">
+    <button class="nav-tab active" onclick="showTab('home')">
+      <span class="icon">🏠</span>Count
+    </button>
+    <button class="nav-tab" onclick="showTab('restock')">
+      <span class="icon">📦</span>Restock
+    </button>
+    <button class="nav-tab" onclick="showTab('order')">
+      <span class="icon">🛒</span>Order
+    </button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── Supabase config ──
+const SUPABASE_URL = 'https://jorflggahzaoryxrefms.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpvcmZsZ2dhaHphb3J5eHJlZm1zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk0NDExMzMsImV4cCI6MjA5NTAxNzEzM30.zQp2jlQJBG5bXwouTRnHEBg7he_CFIpvxS3L-DhIbfU';
+
+// ── API helper ──
+async function sb(path, { method = 'GET', body, single = false, upsert = false } = {}) {
+  const headers = {
+    'apikey': SUPABASE_KEY,
+    'Authorization': `Bearer ${SUPABASE_KEY}`,
+    'Content-Type': 'application/json',
+  };
+  if (upsert) headers['Prefer'] = 'resolution=merge-duplicates,return=representation';
+  else if (method === 'POST') headers['Prefer'] = 'return=representation';
+  else if (method === 'PATCH') headers['Prefer'] = 'return=representation';
+  if (single) headers['Accept'] = 'application/vnd.pgrst.object+json';
+
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    method, headers,
+    body: body ? JSON.stringify(body) : undefined
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Supabase error: ${res.status} ${err}`);
+  }
+  const text = await res.text();
+  return text ? JSON.parse(text) : null;
+}
+
+// ── State ──
+let locations = [];
+let drinks = [];
+let pars = [];
+let session = null;
+let currentLocationId = null;
+let countValues = {}; // { `${drink_id}-${location_id}`: value }
+let locationCounts = {}; // { location_id: { drink_id: value } }
+let orderEdits = {}; // { drink_id: final_qty }
+
+// ── Init ──
+async function init() {
+  try {
+    // Load reference data
+    [locations, drinks, pars] = await Promise.all([
+      sb('locations?order=sort_order'),
+      sb('drinks?active=eq.true&order=category,sub_category,name'),
+      sb('pars?select=*')
+    ]);
+
+    // Get or create today's session
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('sessionDate').textContent = formatDate(today);
+
+    try {
+      session = await sb(`stocktake_sessions?session_date=eq.${today}`, { single: true });
+    } catch {
+      // No session yet — create one
+      session = await sb('stocktake_sessions', {
+        method: 'POST', single: true,
+        body: { session_date: today }
+      });
+    }
+
+    // Load existing counts for this session
+    if (session) {
+      const existing = await sb(`counts?session_id=eq.${session.id}`);
+      existing.forEach(c => {
+        const key = `${c.drink_id}-${c.location_id}`;
+        countValues[key] = c.count_value;
+        if (!locationCounts[c.location_id]) locationCounts[c.location_id] = {};
+        locationCounts[c.location_id][c.drink_id] = c.count_value;
+      });
+    }
+
+    document.getElementById('sessionStatus').textContent =
+      session.status === 'open' ? 'Open' : 'Closed';
+
+    renderLocations();
+    document.getElementById('navTabs').style.display = 'flex';
+
+  } catch (err) {
+    console.error(err);
+    document.getElementById('sessionStatus').textContent = 'Error loading';
+  }
+}
+
+// ── Render locations ──
+function renderLocations() {
+  const icons = { 'Top Deck': '🍹', 'Fwd Deck': '⛵', 'Store Room Fridge': '🧊', 'Wheel House': '🍷', 'Store Room': '📦' };
+  const grid = document.getElementById('locationGrid');
+
+  grid.innerHTML = locations.map(loc => {
+    const drinksHere = pars.filter(p => p.location_id === loc.id && p.par_level >= 0);
+    const counted = drinksHere.filter(p => countValues[`${p.drink_id}-${loc.id}`] !== undefined).length;
+    const total = drinksHere.length;
+    const isDone = counted === total && total > 0;
+
+    return `
+      <div class="loc-card" onclick="openLocation(${loc.id})">
+        <div class="loc-icon">${icons[loc.name] || '📋'}</div>
+        <div class="loc-info">
+          <h3>${loc.name}</h3>
+          <p>${total} drinks</p>
+        </div>
+        <div class="loc-badge ${isDone ? 'done' : ''}">${counted}/${total}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ── Open location for counting ──
+function openLocation(locId) {
+  currentLocationId = locId;
+  const loc = locations.find(l => l.id === locId);
+
+  // Get drinks at this location (via pars)
+  const drinkIds = pars.filter(p => p.location_id === locId).map(p => p.drink_id);
+  const drinksHere = drinks.filter(d => drinkIds.includes(d.id));
+
+  document.getElementById('countLocation').textContent = loc.name;
+
+  // Group by category
+  const groups = {};
+  drinksHere.forEach(d => {
+    const cat = d.sub_category || d.category;
+    if (!groups[cat]) groups[cat] = [];
+    groups[cat].push(d);
+  });
+
+  let html = '';
+  for (const [cat, items] of Object.entries(groups)) {
+    html += `<div class="category-section"><div class="category-label">${cat}</div></div>`;
+    items.forEach(d => {
+      const par = pars.find(p => p.drink_id === d.id && p.location_id === locId);
+      const parLevel = par ? par.par_level : 0;
+      const key = `${d.id}-${locId}`;
+
+      // Pre-fill with par level if no count exists yet — crew just subtract what's missing
+      if (countValues[key] === undefined) {
+        countValues[key] = parLevel;
+        if (!locationCounts[locId]) locationCounts[locId] = {};
+        locationCounts[locId][d.id] = parLevel;
+      }
+      const val = countValues[key];
+      const isAtPar = val === parLevel;
+      const unit = loc.name === 'Store Room' ? d.store_room_unit : d.fridge_unit;
+
+      html += `
+        <div class="drink-row ${isAtPar ? '' : 'adjusted'}" id="row-${key}">
+          <div class="drink-info">
+            <div class="drink-name">${d.name}</div>
+            <div class="drink-meta">Par: ${parLevel} ${unit}${unit.includes('Carton') ? 's' : ''}</div>
+          </div>
+          <div class="count-input-wrap">
+            <button class="count-btn" onclick="adjustCount(${d.id},${locId},-1)">−</button>
+            <input class="count-val" type="number" inputmode="numeric" min="0" step="0.5"
+              id="input-${key}" value="${val}"
+              onfocus="this.select()"
+              oninput="updateCount(${d.id},${locId},this.value)">
+            <button class="count-btn" onclick="adjustCount(${d.id},${locId},1)">+</button>
+          </div>
+        </div>
+      `;
+    });
+  }
+
+  document.getElementById('drinksList').innerHTML = html;
+  updateProgress();
+  showScreen('count');
+}
+
+function adjustCount(drinkId, locId, delta) {
+  const key = `${drinkId}-${locId}`;
+  const input = document.getElementById(`input-${key}`);
+  let val = parseFloat(input.value) || 0;
+  val = Math.max(0, val + delta);
+  input.value = val;
+  updateCount(drinkId, locId, val);
+}
+
+function updateCount(drinkId, locId, val) {
+  const key = `${drinkId}-${locId}`;
+  if (val === '' || val === undefined) {
+    delete countValues[key];
+  } else {
+    countValues[key] = parseFloat(val);
+    if (!locationCounts[locId]) locationCounts[locId] = {};
+    locationCounts[locId][drinkId] = parseFloat(val);
+  }
+
+  // Highlight items adjusted below par in yellow
+  const row = document.getElementById(`row-${key}`);
+  if (row) {
+    const par = pars.find(p => p.drink_id === drinkId && p.location_id === locId);
+    const parLevel = par ? par.par_level : 0;
+    const numVal = parseFloat(val) || 0;
+    row.classList.toggle('adjusted', numVal < parLevel);
+  }
+  updateProgress();
+}
+
+function updateProgress() {
+  const drinkPars = pars.filter(p => p.location_id === currentLocationId);
+  const total = drinkPars.length;
+  // Count items adjusted away from par (i.e. crew has touched them)
+  const adjusted = drinkPars.filter(p => {
+    const key = `${p.drink_id}-${currentLocationId}`;
+    return countValues[key] !== undefined && countValues[key] !== p.par_level;
+  }).length;
+
+  document.getElementById('countProgress').textContent = adjusted > 0
+    ? `${adjusted} adjusted`
+    : `${total} drinks — all at par`;
+  document.getElementById('progressFill').style.width = '100%';
+}
+
+// ── Save counts ──
+async function saveCounts() {
+  const btn = document.getElementById('btnSaveCounts');
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+
+  try {
+    const rows = [];
+    for (const [key, val] of Object.entries(countValues)) {
+      const [drinkId, locId] = key.split('-').map(Number);
+      if (parseInt(locId) === currentLocationId) {
+        rows.push({
+          session_id: session.id,
+          drink_id: drinkId,
+          location_id: locId,
+          count_value: val,
+          counted_at: new Date().toISOString()
+        });
+      }
+    }
+
+    if (rows.length > 0) {
+      await sb('counts?on_conflict=session_id,drink_id,location_id', {
+        method: 'POST', body: rows, upsert: true
+      });
+    }
+
+    toast('Counts saved!');
+    renderLocations();
+    // Go straight to restock view for this location
+    showScreen('restock');
+
+  } catch (err) {
+    console.error(err);
+    toast('Error saving — try again');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Save Counts';
+  }
+}
+
+// ── Restock view ──
+function renderRestock() {
+  // For each fridge location, show what needs restocking from store room
+  const fridgeLocs = locations.filter(l => l.id !== 5); // Everything except Store Room
+  let html = '';
+  let hasItems = false;
+
+  fridgeLocs.forEach(loc => {
+    const items = [];
+    const drinkIds = pars.filter(p => p.location_id === loc.id).map(p => p.drink_id);
+
+    drinkIds.forEach(did => {
+      const key = `${did}-${loc.id}`;
+      if (countValues[key] === undefined) return;
+
+      const par = pars.find(p => p.drink_id === did && p.location_id === loc.id);
+      if (!par || par.par_level <= 0) return;
+
+      const onHand = countValues[key];
+      const needed = par.par_level - onHand;
+
+      if (needed > 0) {
+        const drink = drinks.find(d => d.id === did);
+        items.push({ drink, needed, par: par.par_level, onHand });
+      }
+    });
+
+    if (items.length > 0) {
+      hasItems = true;
+      html += `<div class="section-title">${loc.name}</div>`;
+      items.forEach(item => {
+        const unit = item.drink.fridge_unit;
+        html += `
+          <div class="restock-card">
+            <h4>${item.drink.name}</h4>
+            <div class="qty">Grab <strong>${item.needed}</strong> ${unit}${item.needed !== 1 ? 's' : ''} from store room</div>
+            <div style="font-size:12px;color:var(--text-dim);margin-top:4px">
+              On hand: ${item.onHand} · Par: ${item.par}
+            </div>
+          </div>
+        `;
+      });
+    }
+  });
+
+  if (!hasItems) {
+    html = `<div class="empty-state"><div class="icon">✅</div>All fridges at par — nothing to restock</div>`;
+  }
+
+  document.getElementById('restockList').innerHTML = html;
+}
+
+// ── Order view ──
+function renderOrders() {
+  // Order is triggered when Store Room count drops a FULL unit below par
+  const storeRoomId = 5;
+  const storeRoomPars = pars.filter(p => p.location_id === storeRoomId && p.par_level > 0);
+  let html = '';
+  let hasOrders = false;
+  orderEdits = {};
+
+  storeRoomPars.forEach(par => {
+    const key = `${par.drink_id}-${storeRoomId}`;
+    if (countValues[key] === undefined) return;
+
+    const onHand = countValues[key];
+    const deficit = par.par_level - onHand;
+
+    // Order triggered when deficit >= 1 full unit
+    if (deficit >= 1) {
+      hasOrders = true;
+      const drink = drinks.find(d => d.id === par.drink_id);
+      const suggested = Math.ceil(deficit / drink.pack_size) * drink.pack_size;
+      orderEdits[drink.id] = suggested;
+
+      html += `
+        <div class="order-card">
+          <div class="row">
+            <div>
+              <h4>${drink.name}</h4>
+              <div style="font-size:12px;color:var(--text-dim)">
+                On hand: ${onHand} · Par: ${par.par_level} ${drink.store_room_unit}
+              </div>
+            </div>
+            <input class="order-qty-input" type="number" inputmode="numeric" min="0"
+              value="${suggested}"
+              onchange="orderEdits[${drink.id}]=parseFloat(this.value)||0">
+          </div>
+        </div>
+      `;
+    }
+  });
+
+  if (!hasOrders) {
+    html = `<div class="empty-state"><div class="icon">👍</div>Store room is stocked — no orders needed</div>`;
+    document.getElementById('orderSaveBar').style.display = 'none';
+  } else {
+    document.getElementById('orderSaveBar').style.display = 'flex';
+  }
+
+  document.getElementById('orderList').innerHTML = html;
+}
+
+async function saveOrders() {
+  try {
+    const rows = Object.entries(orderEdits)
+      .filter(([_, qty]) => qty > 0)
+      .map(([drinkId, qty]) => ({
+        session_id: session.id,
+        drink_id: parseInt(drinkId),
+        suggested_qty: qty,
+        final_qty: qty
+      }));
+
+    if (rows.length > 0) {
+      await sb('orders?on_conflict=session_id,drink_id', {
+        method: 'POST', body: rows, upsert: true
+      });
+    }
+    toast('Orders saved!');
+  } catch (err) {
+    console.error(err);
+    toast('Error saving orders');
+  }
+}
+
+// ── Navigation ──
+function showScreen(name) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+
+  const countSaveBar = document.getElementById('countSaveBar');
+  const orderSaveBar = document.getElementById('orderSaveBar');
+  const navTabs = document.getElementById('navTabs');
+
+  countSaveBar.style.display = 'none';
+
+  if (name === 'home') {
+    document.getElementById('homeScreen').classList.add('active');
+    document.getElementById('headerTitle').textContent = 'Drinks Stocktake';
+    navTabs.style.display = 'flex';
+    document.querySelectorAll('.nav-tab')[0].classList.add('active');
+  } else if (name === 'count') {
+    document.getElementById('countScreen').classList.add('active');
+    document.getElementById('headerTitle').textContent = locations.find(l => l.id === currentLocationId)?.name || 'Count';
+    countSaveBar.style.display = 'flex';
+    navTabs.style.display = 'none';
+  } else if (name === 'restock') {
+    renderRestock();
+    document.getElementById('restockScreen').classList.add('active');
+    document.getElementById('headerTitle').textContent = 'Restock Tonight';
+    navTabs.style.display = 'flex';
+    document.querySelectorAll('.nav-tab')[1].classList.add('active');
+  } else if (name === 'order') {
+    renderOrders();
+    document.getElementById('orderScreen').classList.add('active');
+    document.getElementById('headerTitle').textContent = 'Order Tonight';
+    navTabs.style.display = 'flex';
+    document.querySelectorAll('.nav-tab')[2].classList.add('active');
+  }
+}
+
+function showTab(name) {
+  if (name === 'home') showScreen('home');
+  else if (name === 'restock') showScreen('restock');
+  else if (name === 'order') showScreen('order');
+}
+
+// ── Helpers ──
+function formatDate(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  return d.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2500);
+}
+
+// ── Boot ──
+init();
+</script>
+</body>
+</html>
