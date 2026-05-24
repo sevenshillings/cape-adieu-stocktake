@@ -227,6 +227,38 @@
     border-radius: 8px;
   }
 
+  /* Simplified order rows */
+  .order-row {
+    margin: 6px 16px; padding: 12px 14px;
+    background: var(--surface); border-radius: var(--radius);
+    border: 1px solid rgba(255,255,255,0.04);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .order-name {
+    flex: 1; font-size: 15px; font-weight: 600; min-width: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .order-controls { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  .order-x { color: var(--text-dim); font-size: 14px; }
+  .order-qty {
+    width: 48px; height: 36px; text-align: center;
+    background: var(--bg); border: 1px solid var(--yellow);
+    color: var(--text); font-size: 15px; font-weight: 600;
+    border-radius: 8px;
+    -moz-appearance: textfield;
+  }
+  .order-qty::-webkit-inner-spin-button { display: none; }
+  .order-pack {
+    height: 36px; max-width: 150px;
+    background: var(--surface2); border: 1px solid rgba(255,255,255,0.08);
+    color: var(--text); font-size: 13px; font-weight: 500;
+    border-radius: 8px; padding: 0 22px 0 10px;
+    -webkit-appearance: none; appearance: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='%238892a4' d='M0 0l5 6 5-6z'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+  }
+
   .section-title {
     padding: 20px 20px 8px;
     font-size: 13px; font-weight: 700;
@@ -324,7 +356,8 @@
     <div class="section-title">Order Suggestions</div>
     <div id="orderList"></div>
     <div class="save-bar" id="orderSaveBar" style="display:none">
-      <button class="btn-save" onclick="saveOrders()">Confirm Orders</button>
+      <button class="btn-secondary" onclick="copyOrder()">Copy</button>
+      <button class="btn-save" onclick="sendOrder()">Send order</button>
     </div>
   </div>
 
@@ -381,7 +414,40 @@ let session = null;
 let currentLocationId = null;
 let countValues = {}; // { `${drink_id}-${location_id}`: value }
 let locationCounts = {}; // { location_id: { drink_id: value } }
-let orderEdits = {}; // { drink_id: final_qty }
+let orderState = {}; // { drink_id: { qty, packKey, drinkName, drinkPackSize } }
+
+// ── Pack options for ordering ──
+const PACK_OPTIONS = [
+  { key: 'carton-24-cans',    label: 'Carton of 24 cans',    size: 24, singular: 'carton of 24 cans',    plural: 'cartons of 24 cans' },
+  { key: 'carton-30-cans',    label: 'Carton of 30 cans',    size: 30, singular: 'carton of 30 cans',    plural: 'cartons of 30 cans' },
+  { key: 'carton-24-bottles', label: 'Carton of 24 bottles', size: 24, singular: 'carton of 24 bottles', plural: 'cartons of 24 bottles' },
+  { key: 'carton-30-bottles', label: 'Carton of 30 bottles', size: 30, singular: 'carton of 30 bottles', plural: 'cartons of 30 bottles' },
+  { key: '12pack-cans',       label: '12-pack cans',         size: 12, singular: '12-pack of cans',      plural: '12-packs of cans' },
+  { key: '12pack-bottles',    label: '12-pack bottles',      size: 12, singular: '12-pack of bottles',   plural: '12-packs of bottles' },
+  { key: '6pack-cans',        label: '6-pack cans',          size: 6,  singular: '6-pack of cans',       plural: '6-packs of cans' },
+  { key: '6pack-bottles',     label: '6-pack bottles',       size: 6,  singular: '6-pack of bottles',    plural: '6-packs of bottles' },
+  { key: 'single-can',        label: 'Single can',           size: 1,  singular: 'can',                  plural: 'cans' },
+  { key: 'single-bottle',     label: 'Single bottle',        size: 1,  singular: 'bottle',               plural: 'bottles' }
+];
+function packBy(key) { return PACK_OPTIONS.find(p => p.key === key) || PACK_OPTIONS[0]; }
+function defaultPackKey(drink) {
+  const size = drink && drink.pack_size ? drink.pack_size : 24;
+  if (size >= 30) return 'carton-30-cans';
+  if (size >= 24) return 'carton-24-cans';
+  if (size >= 12) return '12pack-cans';
+  if (size >= 6)  return '6pack-cans';
+  return 'single-can';
+}
+function lastPackKey(drinkId, drink) {
+  try {
+    const v = localStorage.getItem(`order-pack-${drinkId}`);
+    if (v && PACK_OPTIONS.some(p => p.key === v)) return v;
+  } catch (e) {}
+  return defaultPackKey(drink);
+}
+function setLastPackKey(drinkId, key) {
+  try { localStorage.setItem(`order-pack-${drinkId}`, key); } catch (e) {}
+}
 
 // ── Init ──
 async function init() {
@@ -673,12 +739,13 @@ function toggleRestockLoc(locId) {
 
 // ── Order view ──
 function renderOrders() {
-  // Order is triggered when Store Room count drops a FULL unit below par
+  // Order is triggered when Store Room count drops a FULL unit below par.
+  // Each row is a single line: name × [qty] [pack picker ▼].
   const storeRoomId = 5;
   const storeRoomPars = pars.filter(p => p.location_id === storeRoomId && p.par_level > 0);
   let html = '';
   let hasOrders = false;
-  orderEdits = {};
+  orderState = {};
 
   storeRoomPars.forEach(par => {
     const key = `${par.drink_id}-${storeRoomId}`;
@@ -686,30 +753,37 @@ function renderOrders() {
 
     const onHand = countValues[key];
     const deficit = par.par_level - onHand;
+    if (deficit < 1) return;
 
-    // Order triggered when deficit >= 1 full unit
-    if (deficit >= 1) {
-      hasOrders = true;
-      const drink = drinks.find(d => d.id === par.drink_id);
-      const suggested = Math.ceil(deficit / drink.pack_size) * drink.pack_size;
-      orderEdits[drink.id] = suggested;
+    hasOrders = true;
+    const drink = drinks.find(d => d.id === par.drink_id);
+    const packKey = lastPackKey(drink.id, drink);
+    const pack = packBy(packKey);
 
-      html += `
-        <div class="order-card">
-          <div class="row">
-            <div>
-              <h4>${drink.name}</h4>
-              <div style="font-size:12px;color:var(--text-dim)">
-                On hand: ${onHand} · Par: ${par.par_level} ${drink.store_room_unit}
-              </div>
-            </div>
-            <input class="order-qty-input" type="number" inputmode="numeric" min="0"
-              value="${suggested}"
-              onchange="orderEdits[${drink.id}]=parseFloat(this.value)||0">
-          </div>
+    // Convert deficit (in store-room units, usually cartons) into total pieces
+    // via the drink's native pack_size, then into the chosen pack's units.
+    const piecesPerCarton = drink.pack_size && drink.pack_size > 1 ? drink.pack_size : 1;
+    const piecesNeeded = Math.ceil(deficit) * piecesPerCarton;
+    const qty = Math.max(1, Math.ceil(piecesNeeded / pack.size));
+
+    orderState[drink.id] = { qty, packKey, drinkName: drink.name, piecesPerCarton, deficit };
+
+    const options = PACK_OPTIONS.map(p =>
+      `<option value="${p.key}"${p.key === packKey ? ' selected' : ''}>${p.label}</option>`
+    ).join('');
+
+    html += `
+      <div class="order-row" id="order-row-${drink.id}">
+        <div class="order-name">${drink.name}</div>
+        <div class="order-controls">
+          <span class="order-x">×</span>
+          <input class="order-qty" type="number" inputmode="numeric" min="0" value="${qty}"
+                 onfocus="this.select()"
+                 onchange="updateOrderQty(${drink.id}, this.value)">
+          <select class="order-pack" onchange="updateOrderPack(${drink.id}, this.value)">${options}</select>
         </div>
-      `;
-    }
+      </div>
+    `;
   });
 
   if (!hasOrders) {
@@ -722,26 +796,86 @@ function renderOrders() {
   document.getElementById('orderList').innerHTML = html;
 }
 
-async function saveOrders() {
-  try {
-    const rows = Object.entries(orderEdits)
-      .filter(([_, qty]) => qty > 0)
-      .map(([drinkId, qty]) => ({
-        session_id: session.id,
-        drink_id: parseInt(drinkId),
-        suggested_qty: qty,
-        final_qty: qty
-      }));
+function updateOrderQty(drinkId, val) {
+  if (!orderState[drinkId]) return;
+  orderState[drinkId].qty = Math.max(0, parseFloat(val) || 0);
+}
+function updateOrderPack(drinkId, packKey) {
+  const s = orderState[drinkId];
+  if (!s) return;
+  // Recompute suggested qty so the new pack reflects the same total deficit,
+  // but keep the user's manual override if they've moved it away from the previous suggestion.
+  const oldPack = packBy(s.packKey);
+  const newPack = packBy(packKey);
+  const totalPiecesAtOldQty = s.qty * oldPack.size;
+  const suggestedNewQty = Math.max(1, Math.ceil(totalPiecesAtOldQty / newPack.size));
+  s.packKey = packKey;
+  s.qty = suggestedNewQty;
+  setLastPackKey(drinkId, packKey);
+  // Re-render just the qty input
+  const row = document.getElementById(`order-row-${drinkId}`);
+  if (row) {
+    const input = row.querySelector('.order-qty');
+    if (input) input.value = suggestedNewQty;
+  }
+}
 
-    if (rows.length > 0) {
-      await sb('orders?on_conflict=session_id,drink_id', {
-        method: 'POST', body: rows, upsert: true
-      });
+async function saveOrders() {
+  const rows = Object.entries(orderState)
+    .filter(([_, s]) => s.qty > 0)
+    .map(([drinkId, s]) => ({
+      session_id: session.id,
+      drink_id: parseInt(drinkId),
+      suggested_qty: s.qty,
+      final_qty: s.qty
+    }));
+  if (rows.length === 0) return;
+  await sb('orders?on_conflict=session_id,drink_id', {
+    method: 'POST', body: rows, upsert: true
+  });
+}
+
+function buildOrderText() {
+  const today = new Date().toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' });
+  const lines = Object.entries(orderState)
+    .filter(([_, s]) => s.qty > 0)
+    .map(([_, s]) => {
+      const pack = packBy(s.packKey);
+      const label = s.qty === 1 ? pack.singular : pack.plural;
+      return `• ${s.drinkName} × ${s.qty} ${label}`;
+    });
+  if (lines.length === 0) return '';
+  return `Cape Adieu drinks order — ${today}\n\n${lines.join('\n')}`;
+}
+
+async function sendOrder() {
+  const text = buildOrderText();
+  if (!text) { toast('Nothing to order'); return; }
+  // Save to DB silently first
+  try { await saveOrders(); } catch (e) { console.error('Save failed', e); }
+  // Try Web Share API (iOS share sheet includes Messages, Mail, etc.)
+  if (navigator.share) {
+    try {
+      await navigator.share({ text, title: 'Cape Adieu drinks order' });
+      toast('Order sent');
+      return;
+    } catch (e) {
+      if (e && e.name === 'AbortError') return; // user cancelled
+      // fall through to SMS fallback
     }
-    toast('Orders saved!');
-  } catch (err) {
-    console.error(err);
-    toast('Error saving orders');
+  }
+  // Fallback: open Messages app pre-filled
+  window.location.href = `sms:?&body=${encodeURIComponent(text)}`;
+}
+
+async function copyOrder() {
+  const text = buildOrderText();
+  if (!text) { toast('Nothing to order'); return; }
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('Copied');
+  } catch (e) {
+    toast('Copy failed');
   }
 }
 
