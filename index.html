@@ -50,8 +50,8 @@
     display: flex; align-items: center; justify-content: center; font-size: 18px;
   }
 
-  /* Screens */
-  .screen { display: none; padding-bottom: 100px; }
+  /* Screens — bottom padding clears nav-tabs AND a stacked save bar */
+  .screen { display: none; padding-bottom: calc(140px + env(safe-area-inset-bottom)); }
   .screen.active { display: block; }
 
   /* Home screen */
@@ -189,7 +189,14 @@
     padding: 12px 16px; padding-bottom: max(12px, env(safe-area-inset-bottom));
     background: var(--surface);
     border-top: 1px solid rgba(255,255,255,0.06);
-    display: flex; gap: 10px; z-index: 100;
+    display: flex; gap: 10px; z-index: 110;  /* above nav-tabs */
+  }
+  /* When nav-tabs are visible underneath, sit just above them so neither covers
+     the other. Nav-tab content is ~55px tall; its safe-area inset is rendered
+     by .nav-tabs, so we don't need it here too. */
+  .save-bar.with-tabs {
+    bottom: calc(55px + env(safe-area-inset-bottom));
+    padding-bottom: 12px;
   }
   .btn-save {
     flex: 1; padding: 14px;
@@ -396,7 +403,7 @@
   <div class="screen" id="orderScreen">
     <div class="section-title">Order Suggestions</div>
     <div id="orderList"></div>
-    <div class="save-bar" id="orderSaveBar" style="display:none">
+    <div class="save-bar with-tabs" id="orderSaveBar" style="display:none">
       <button class="btn-secondary" onclick="copyOrder()">Copy</button>
       <button class="btn-save" onclick="sendOrder()">Send order</button>
     </div>
@@ -406,7 +413,7 @@
   <div class="screen" id="parsScreen">
     <div class="section-title">Adjust Par Levels</div>
     <div id="parsList"></div>
-    <div class="save-bar" id="parsSaveBar" style="display:none">
+    <div class="save-bar with-tabs" id="parsSaveBar" style="display:none">
       <button class="btn-secondary" onclick="cancelPars()">Discard</button>
       <button class="btn-save" id="btnSavePars" onclick="savePars()">Save</button>
     </div>
