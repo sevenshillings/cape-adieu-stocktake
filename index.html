@@ -267,6 +267,39 @@
     max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
 
+  /* Par-levels editor */
+  .par-cat-label {
+    font-size: 11px; font-weight: 700; color: var(--accent);
+    text-transform: uppercase; letter-spacing: 0.5px;
+    margin: 12px 0 2px;
+  }
+  .par-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+  }
+  .par-row:last-child { border-bottom: none; }
+  .par-row.zero { opacity: 0.45; }
+  .par-row.changed {
+    background: rgba(245,166,35,0.08);
+    margin: 0 -8px; padding-left: 8px; padding-right: 8px;
+    border-radius: 6px;
+    opacity: 1;
+  }
+  .par-name-wrap { flex: 1; min-width: 0; }
+  .par-name { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .par-meta { font-size: 11px; color: var(--text-dim); margin-top: 1px; }
+  .par-input {
+    width: 56px; height: 36px; text-align: center;
+    background: var(--bg); border: 1px solid rgba(255,255,255,0.12);
+    color: var(--text); font-size: 15px; font-weight: 600;
+    border-radius: 8px;
+    -moz-appearance: textfield;
+  }
+  .par-input::-webkit-inner-spin-button { display: none; }
+  .par-input:focus { border-color: var(--accent); outline: none; }
+  .par-row.changed .par-input { border-color: var(--yellow); color: var(--yellow); }
+
   .section-title {
     padding: 20px 20px 8px;
     font-size: 13px; font-weight: 700;
@@ -369,6 +402,16 @@
     </div>
   </div>
 
+  <!-- PARS SCREEN -->
+  <div class="screen" id="parsScreen">
+    <div class="section-title">Adjust Par Levels</div>
+    <div id="parsList"></div>
+    <div class="save-bar" id="parsSaveBar" style="display:none">
+      <button class="btn-secondary" onclick="cancelPars()">Discard</button>
+      <button class="btn-save" id="btnSavePars" onclick="savePars()">Save</button>
+    </div>
+  </div>
+
   <!-- NAV TABS -->
   <div class="nav-tabs" id="navTabs" style="display:none">
     <button class="nav-tab active" onclick="showTab('home')">
@@ -379,6 +422,9 @@
     </button>
     <button class="nav-tab" onclick="showTab('order')">
       <span class="icon">🛒</span>Order
+    </button>
+    <button class="nav-tab" onclick="showTab('pars')">
+      <span class="icon">🎯</span>Pars
     </button>
   </div>
 </div>
@@ -423,6 +469,7 @@ let currentLocationId = null;
 let countValues = {}; // { `${drink_id}-${location_id}`: value }
 let locationCounts = {}; // { location_id: { drink_id: value } }
 let orderState = {}; // { drink_id: { qty, packKey, drinkName, drinkPackSize } }
+let parEdits = {};   // { 'drinkId-locationId': new_par_value }
 
 // ── Pack options for ordering ──
 // Each drink's pack options come from its OWN data: fridge_unit, store_room_unit,
@@ -940,6 +987,134 @@ async function copyOrder() {
   }
 }
 
+// ── Par levels editor ──
+function renderPars() {
+  parEdits = {};
+  let html = '';
+
+  locations.forEach(loc => {
+    // Drinks that have a par row at this location (existing rows in `pars`)
+    const locPars = pars.filter(p => p.location_id === loc.id);
+    const drinkIds = locPars.map(p => p.drink_id);
+    const locDrinks = drinks.filter(d => drinkIds.includes(d.id));
+
+    // Group by sub_category or category
+    const groups = {};
+    locDrinks.forEach(d => {
+      const cat = d.sub_category || d.category || 'Other';
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(d);
+    });
+
+    let body = '';
+    // Sort categories for stable order
+    Object.keys(groups).sort().forEach(cat => {
+      const items = groups[cat];
+      // Within category: stocked drinks first, then unstocked
+      items.sort((a, b) => {
+        const pa = (locPars.find(p => p.drink_id === a.id) || {}).par_level || 0;
+        const pb = (locPars.find(p => p.drink_id === b.id) || {}).par_level || 0;
+        if ((pa > 0) !== (pb > 0)) return pa > 0 ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      });
+      body += `<div class="par-cat-label">${cat}</div>`;
+      items.forEach(d => {
+        const par = locPars.find(p => p.drink_id === d.id);
+        const val = par ? par.par_level : 0;
+        const unit = loc.name === 'Store Room' ? d.store_room_unit : d.fridge_unit;
+        body += `
+          <div class="par-row ${val === 0 ? 'zero' : ''}" id="par-row-${d.id}-${loc.id}">
+            <div class="par-name-wrap">
+              <div class="par-name">${d.name}</div>
+              <div class="par-meta">${unit || ''}</div>
+            </div>
+            <input class="par-input" type="number" inputmode="numeric" min="0" step="0.5"
+                   value="${val}"
+                   onfocus="this.select()"
+                   onchange="updatePar(${d.id}, ${loc.id}, this.value)">
+          </div>
+        `;
+      });
+    });
+
+    const stockedCount = locPars.filter(p => p.par_level > 0).length;
+    html += `
+      <div class="collapse-group" id="pars-loc-${loc.id}">
+        <button class="collapse-header" onclick="togglePars(${loc.id})">
+          <span class="collapse-title">${loc.name}</span>
+          <span class="collapse-count">${stockedCount} stocked</span>
+          <span class="chevron">▶</span>
+        </button>
+        <div class="collapse-body">${body}</div>
+      </div>
+    `;
+  });
+
+  document.getElementById('parsList').innerHTML = html;
+  refreshParsSaveBar();
+}
+
+function togglePars(locId) {
+  document.getElementById(`pars-loc-${locId}`).classList.toggle('open');
+}
+
+function updatePar(drinkId, locId, val) {
+  const key = `${drinkId}-${locId}`;
+  const newVal = Math.max(0, parseFloat(val) || 0);
+  const current = pars.find(p => p.drink_id === drinkId && p.location_id === locId);
+  const currentVal = current ? current.par_level : 0;
+  if (newVal === currentVal) {
+    delete parEdits[key];
+  } else {
+    parEdits[key] = newVal;
+  }
+  const row = document.getElementById(`par-row-${drinkId}-${locId}`);
+  if (row) {
+    row.classList.toggle('changed', parEdits[key] !== undefined);
+    row.classList.toggle('zero', newVal === 0 && parEdits[key] === undefined);
+  }
+  refreshParsSaveBar();
+}
+
+function refreshParsSaveBar() {
+  const bar = document.getElementById('parsSaveBar');
+  if (!bar) return;
+  bar.style.display = Object.keys(parEdits).length > 0 ? 'flex' : 'none';
+}
+
+function cancelPars() {
+  if (Object.keys(parEdits).length === 0) return;
+  parEdits = {};
+  renderPars();
+}
+
+async function savePars() {
+  const btn = document.getElementById('btnSavePars');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    const rows = Object.entries(parEdits).map(([key, val]) => {
+      const [drinkId, locId] = key.split('-').map(Number);
+      return { drink_id: drinkId, location_id: locId, par_level: val };
+    });
+    if (rows.length > 0) {
+      await sb('pars?on_conflict=drink_id,location_id', {
+        method: 'POST', body: rows, upsert: true
+      });
+      // Refresh local cache so downstream views (restock/order/count) see new pars
+      pars = await sb('pars?select=*');
+    }
+    parEdits = {};
+    renderPars();
+    renderLocations();   // counts on home reflect new par totals
+    toast('Pars saved');
+  } catch (err) {
+    console.error(err);
+    toast('Error saving pars');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Save';
+  }
+}
+
 // ── Navigation ──
 function showScreen(name) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -973,6 +1148,12 @@ function showScreen(name) {
     document.getElementById('headerTitle').textContent = 'Order Tonight';
     navTabs.style.display = 'flex';
     document.querySelectorAll('.nav-tab')[2].classList.add('active');
+  } else if (name === 'pars') {
+    renderPars();
+    document.getElementById('parsScreen').classList.add('active');
+    document.getElementById('headerTitle').textContent = 'Par Levels';
+    navTabs.style.display = 'flex';
+    document.querySelectorAll('.nav-tab')[3].classList.add('active');
   }
 }
 
@@ -980,6 +1161,7 @@ function showTab(name) {
   if (name === 'home') showScreen('home');
   else if (name === 'restock') showScreen('restock');
   else if (name === 'order') showScreen('order');
+  else if (name === 'pars') showScreen('pars');
 }
 
 // ── Helpers ──
