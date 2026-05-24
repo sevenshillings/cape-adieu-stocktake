@@ -49,6 +49,17 @@
     width: 36px; height: 36px; border-radius: 8px; cursor: pointer;
     display: flex; align-items: center; justify-content: center; font-size: 18px;
   }
+  .btn-header-date {
+    background: var(--surface2); color: var(--text);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 13px; font-weight: 600;
+    cursor: pointer;
+    display: inline-flex; align-items: center; gap: 4px;
+    max-width: 180px; white-space: nowrap;
+  }
+  .btn-header-date:active { background: var(--surface); }
 
   /* Screens — bottom padding clears nav-tabs AND a stacked save bar */
   .screen { display: none; padding-bottom: calc(140px + env(safe-area-inset-bottom)); }
@@ -436,6 +447,11 @@
   </div>
 </div>
 
+<!-- Hidden delivery-date picker (Order screen) -->
+<input type="date" id="deliveryDatePicker"
+       onchange="setDeliveryDate(this.value)"
+       style="position:absolute; left:-9999px; top:-9999px; opacity:0; pointer-events:none;">
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -477,6 +493,43 @@ let countValues = {}; // { `${drink_id}-${location_id}`: value }
 let locationCounts = {}; // { location_id: { drink_id: value } }
 let orderState = {}; // { drink_id: { qty, packKey, drinkName, drinkPackSize } }
 let parEdits = {};   // { 'drinkId-locationId': new_par_value }
+let deliveryDate = new Date(); // default delivery date for orders = today
+
+// ── Delivery date helpers ──
+function formatDeliveryDate(d) {
+  return d.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' });
+}
+function deliveryDateAsISO(d) {
+  const yr = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, '0');
+  const dy = String(d.getDate()).padStart(2, '0');
+  return `${yr}-${mo}-${dy}`;
+}
+function setDeliveryDate(iso) {
+  if (!iso) return;
+  const [y, m, d] = iso.split('-').map(Number);
+  if (!y || !m || !d) return;
+  deliveryDate = new Date(y, m - 1, d);
+  const lbl = document.getElementById('deliveryDateLabel');
+  if (lbl) lbl.textContent = formatDeliveryDate(deliveryDate);
+}
+function openDeliveryDatePicker() {
+  const input = document.getElementById('deliveryDatePicker');
+  if (!input) return;
+  input.value = deliveryDateAsISO(deliveryDate);
+  if (typeof input.showPicker === 'function') {
+    try { input.showPicker(); return; } catch (e) {}
+  }
+  input.click();
+  input.focus();
+}
+function setDeliveryHeaderButton() {
+  const r = document.getElementById('headerRight');
+  if (!r) return;
+  r.innerHTML = `<button class="btn-header-date" type="button" onclick="openDeliveryDatePicker()">📅 <span id="deliveryDateLabel">${formatDeliveryDate(deliveryDate)}</span></button>`;
+  const input = document.getElementById('deliveryDatePicker');
+  if (input) input.value = deliveryDateAsISO(deliveryDate);
+}
 
 // ── Pack options for ordering ──
 // Each drink's pack options come from its OWN data: fridge_unit, store_room_unit,
@@ -951,7 +1004,6 @@ async function saveOrders() {
 }
 
 function buildOrderText() {
-  const today = new Date().toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' });
   const lines = Object.entries(orderState)
     .filter(([_, s]) => s.qty > 0)
     .map(([_, s]) => {
@@ -960,7 +1012,8 @@ function buildOrderText() {
       return `• ${s.drinkName} × ${s.qty} ${label}`;
     });
   if (lines.length === 0) return '';
-  return `Cape Adieu drinks order — ${today}\n\n${lines.join('\n')}`;
+  const dateStr = formatDeliveryDate(deliveryDate);
+  return `G'day Tony,\nCape Adieu drinks order;\nDelivery on ${dateStr}:\n\n${lines.join('\n')}\n\nthanks.`;
 }
 
 async function sendOrder() {
@@ -1132,6 +1185,8 @@ function showScreen(name) {
   const navTabs = document.getElementById('navTabs');
 
   countSaveBar.style.display = 'none';
+  // Reset header-right slot on every screen change; Order will re-populate it.
+  document.getElementById('headerRight').innerHTML = '';
 
   if (name === 'home') {
     document.getElementById('homeScreen').classList.add('active');
@@ -1155,6 +1210,7 @@ function showScreen(name) {
     document.getElementById('headerTitle').textContent = 'Order Tonight';
     navTabs.style.display = 'flex';
     document.querySelectorAll('.nav-tab')[2].classList.add('active');
+    setDeliveryHeaderButton();
   } else if (name === 'pars') {
     renderPars();
     document.getElementById('parsScreen').classList.add('active');
