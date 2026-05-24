@@ -258,6 +258,14 @@
     background-repeat: no-repeat;
     background-position: right 8px center;
   }
+  .order-pack-static {
+    height: 36px; line-height: 36px;
+    padding: 0 10px;
+    background: var(--surface2); border: 1px solid rgba(255,255,255,0.08);
+    color: var(--text); font-size: 13px; font-weight: 500;
+    border-radius: 8px;
+    max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
 
   .section-title {
     padding: 20px 20px 8px;
@@ -417,33 +425,76 @@ let locationCounts = {}; // { location_id: { drink_id: value } }
 let orderState = {}; // { drink_id: { qty, packKey, drinkName, drinkPackSize } }
 
 // ── Pack options for ordering ──
-const PACK_OPTIONS = [
-  { key: 'carton-24-cans',    label: 'Carton of 24 cans',    size: 24, singular: 'carton of 24 cans',    plural: 'cartons of 24 cans' },
-  { key: 'carton-30-cans',    label: 'Carton of 30 cans',    size: 30, singular: 'carton of 30 cans',    plural: 'cartons of 30 cans' },
-  { key: 'carton-24-bottles', label: 'Carton of 24 bottles', size: 24, singular: 'carton of 24 bottles', plural: 'cartons of 24 bottles' },
-  { key: 'carton-30-bottles', label: 'Carton of 30 bottles', size: 30, singular: 'carton of 30 bottles', plural: 'cartons of 30 bottles' },
-  { key: '12pack-cans',       label: '12-pack cans',         size: 12, singular: '12-pack of cans',      plural: '12-packs of cans' },
-  { key: '12pack-bottles',    label: '12-pack bottles',      size: 12, singular: '12-pack of bottles',   plural: '12-packs of bottles' },
-  { key: '6pack-cans',        label: '6-pack cans',          size: 6,  singular: '6-pack of cans',       plural: '6-packs of cans' },
-  { key: '6pack-bottles',     label: '6-pack bottles',       size: 6,  singular: '6-pack of bottles',    plural: '6-packs of bottles' },
-  { key: 'single-can',        label: 'Single can',           size: 1,  singular: 'can',                  plural: 'cans' },
-  { key: 'single-bottle',     label: 'Single bottle',        size: 1,  singular: 'bottle',               plural: 'bottles' }
-];
-function packBy(key) { return PACK_OPTIONS.find(p => p.key === key) || PACK_OPTIONS[0]; }
-function defaultPackKey(drink) {
-  const size = drink && drink.pack_size ? drink.pack_size : 24;
-  if (size >= 30) return 'carton-30-cans';
-  if (size >= 24) return 'carton-24-cans';
-  if (size >= 12) return '12pack-cans';
-  if (size >= 6)  return '6pack-cans';
-  return 'single-can';
+// Each drink's pack options come from its OWN data: fridge_unit, store_room_unit,
+// pack_size and conversion_factor (loaded from the Pars Worksheet). We don't
+// invent options — we ask the drink what pack it ships in.
+
+function makePackOption(pieces, piece) {
+  // piece is 'bottle' | 'can' | '' (when there's no clear piece word, eg pre-mixes)
+  const pieceWord = piece ? ` ${piece}${pieces === 1 ? '' : 's'}` : '';
+  let label, singular, plural;
+  if (pieces === 1) {
+    label    = piece ? `Single ${piece}` : 'Single';
+    singular = piece || 'unit';
+    plural   = piece ? `${piece}s` : 'units';
+  } else if (pieces === 6) {
+    label    = `6-pack${pieceWord}`;
+    singular = piece ? `6-pack of ${piece}s` : '6-pack';
+    plural   = piece ? `6-packs of ${piece}s` : '6-packs';
+  } else if (pieces === 12) {
+    label    = `Case of 12${pieceWord}`;
+    singular = piece ? `case of 12 ${piece}s` : 'case of 12';
+    plural   = piece ? `cases of 12 ${piece}s` : 'cases of 12';
+  } else if (pieces === 24 || pieces === 30) {
+    label    = `Carton of ${pieces}${pieceWord}`;
+    singular = piece ? `carton of ${pieces} ${piece}s` : `carton of ${pieces}`;
+    plural   = piece ? `cartons of ${pieces} ${piece}s` : `cartons of ${pieces}`;
+  } else {
+    label    = `${pieces}-pack${pieceWord}`;
+    singular = piece ? `${pieces}-pack of ${piece}s` : `${pieces}-pack`;
+    plural   = piece ? `${pieces}-packs of ${piece}s` : `${pieces}-packs`;
+  }
+  return { key: `${pieces}-${piece || 'unit'}`, label, singular, plural, pieces };
 }
-function lastPackKey(drinkId, drink) {
-  try {
-    const v = localStorage.getItem(`order-pack-${drinkId}`);
-    if (v && PACK_OPTIONS.some(p => p.key === v)) return v;
-  } catch (e) {}
-  return defaultPackKey(drink);
+
+function packDescriptors(drink) {
+  // Returns { options: [pack], defaultKey } for a single drink.
+  const fu  = (drink.fridge_unit || '').trim();
+  const sru = (drink.store_room_unit || '').trim();
+  const ps  = drink.pack_size || 1;
+
+  // Jugs are a thing of their own
+  if (sru === 'Jugs' || fu === 'Jugs') {
+    const o = { key: 'jug', label: 'Jug', singular: 'jug', plural: 'jugs', pieces: 1 };
+    return { options: [o], defaultKey: o.key };
+  }
+
+  // Piece word (cans vs bottles) comes from fridge_unit since that's what's
+  // physically in the package.
+  let piece = '';
+  if (fu === 'Can') piece = 'can';
+  else if (fu === 'Bottle') piece = 'bottle';
+  // For pre-mixes where fridge_unit is also "Carton-N" the piece word stays blank.
+
+  // Default pack size in pieces:
+  //   store_room_unit = "Carton-N"  → N pieces per pack
+  //   store_room_unit = "Bottle"/"Can" → pack_size pieces per pack (1, 6, 12, 24, …)
+  const cartonMatch = sru.match(/^Carton-(\d+)$/i);
+  const defaultPieces = cartonMatch ? parseInt(cartonMatch[1], 10) : ps;
+
+  // Build the options set: always include the default; add sensible alternatives
+  // (1, 6, 12, 24, 30) only for drinks that come in bottles or cans.
+  const sizes = new Set([defaultPieces]);
+  if (piece === 'bottle' || piece === 'can') {
+    [1, 6, 12, 24, 30].forEach(s => sizes.add(s));
+  }
+  const options = Array.from(sizes).sort((a, b) => a - b).map(s => makePackOption(s, piece));
+  const defaultKey = makePackOption(defaultPieces, piece).key;
+  return { options, defaultKey };
+}
+
+function lastPackKey(drinkId) {
+  try { return localStorage.getItem(`order-pack-${drinkId}`); } catch (e) { return null; }
 }
 function setLastPackKey(drinkId, key) {
   try { localStorage.setItem(`order-pack-${drinkId}`, key); } catch (e) {}
@@ -741,6 +792,8 @@ function toggleRestockLoc(locId) {
 function renderOrders() {
   // Order is triggered when Store Room count drops a FULL unit below par.
   // Each row is a single line: name × [qty] [pack picker ▼].
+  // The pack options for each row come from THAT drink's data
+  // (store_room_unit + fridge_unit + pack_size + conversion_factor).
   const storeRoomId = 5;
   const storeRoomPars = pars.filter(p => p.location_id === storeRoomId && p.par_level > 0);
   let html = '';
@@ -755,22 +808,31 @@ function renderOrders() {
     const deficit = par.par_level - onHand;
     if (deficit < 1) return;
 
-    hasOrders = true;
     const drink = drinks.find(d => d.id === par.drink_id);
-    const packKey = lastPackKey(drink.id, drink);
-    const pack = packBy(packKey);
+    if (!drink) return;
+    hasOrders = true;
 
-    // Convert deficit (in store-room units, usually cartons) into total pieces
-    // via the drink's native pack_size, then into the chosen pack's units.
-    const piecesPerCarton = drink.pack_size && drink.pack_size > 1 ? drink.pack_size : 1;
-    const piecesNeeded = Math.ceil(deficit) * piecesPerCarton;
-    const qty = Math.max(1, Math.ceil(piecesNeeded / pack.size));
+    const desc = packDescriptors(drink);
+    // Last-used pack for this drink; fall back to the data-driven default.
+    let packKey = lastPackKey(drink.id) || desc.defaultKey;
+    if (!desc.options.some(o => o.key === packKey)) packKey = desc.defaultKey;
+    const pack = desc.options.find(o => o.key === packKey);
 
-    orderState[drink.id] = { qty, packKey, drinkName: drink.name, piecesPerCarton, deficit };
+    // Pieces needed = deficit (in store-room units) × conversion_factor.
+    // Example: Corona deficit=2 cartons, conv=24 → 48 bottles short.
+    // Wine deficit=10 bottles, conv=1 → 10 bottles short.
+    const piecesNeeded = Math.ceil(deficit) * (drink.conversion_factor || 1);
+    const qty = Math.max(1, Math.ceil(piecesNeeded / pack.pieces));
 
-    const options = PACK_OPTIONS.map(p =>
-      `<option value="${p.key}"${p.key === packKey ? ' selected' : ''}>${p.label}</option>`
+    orderState[drink.id] = { qty, packKey, drinkName: drink.name, options: desc.options };
+
+    const optsHtml = desc.options.map(o =>
+      `<option value="${o.key}"${o.key === packKey ? ' selected' : ''}>${o.label}</option>`
     ).join('');
+    const showPicker = desc.options.length > 1;
+    const packCell = showPicker
+      ? `<select class="order-pack" onchange="updateOrderPack(${drink.id}, this.value)">${optsHtml}</select>`
+      : `<span class="order-pack-static">${pack.label}</span>`;
 
     html += `
       <div class="order-row" id="order-row-${drink.id}">
@@ -780,7 +842,7 @@ function renderOrders() {
           <input class="order-qty" type="number" inputmode="numeric" min="0" value="${qty}"
                  onfocus="this.select()"
                  onchange="updateOrderQty(${drink.id}, this.value)">
-          <select class="order-pack" onchange="updateOrderPack(${drink.id}, this.value)">${options}</select>
+          ${packCell}
         </div>
       </div>
     `;
@@ -803,20 +865,19 @@ function updateOrderQty(drinkId, val) {
 function updateOrderPack(drinkId, packKey) {
   const s = orderState[drinkId];
   if (!s) return;
-  // Recompute suggested qty so the new pack reflects the same total deficit,
-  // but keep the user's manual override if they've moved it away from the previous suggestion.
-  const oldPack = packBy(s.packKey);
-  const newPack = packBy(packKey);
-  const totalPiecesAtOldQty = s.qty * oldPack.size;
-  const suggestedNewQty = Math.max(1, Math.ceil(totalPiecesAtOldQty / newPack.size));
+  const oldPack = s.options.find(o => o.key === s.packKey);
+  const newPack = s.options.find(o => o.key === packKey);
+  if (!oldPack || !newPack) return;
+  // Preserve total pieces when switching pack format.
+  const totalPieces = s.qty * oldPack.pieces;
+  const newQty = Math.max(1, Math.ceil(totalPieces / newPack.pieces));
   s.packKey = packKey;
-  s.qty = suggestedNewQty;
+  s.qty = newQty;
   setLastPackKey(drinkId, packKey);
-  // Re-render just the qty input
   const row = document.getElementById(`order-row-${drinkId}`);
   if (row) {
     const input = row.querySelector('.order-qty');
-    if (input) input.value = suggestedNewQty;
+    if (input) input.value = newQty;
   }
 }
 
@@ -840,7 +901,7 @@ function buildOrderText() {
   const lines = Object.entries(orderState)
     .filter(([_, s]) => s.qty > 0)
     .map(([_, s]) => {
-      const pack = packBy(s.packKey);
+      const pack = s.options.find(o => o.key === s.packKey) || s.options[0];
       const label = s.qty === 1 ? pack.singular : pack.plural;
       return `• ${s.drinkName} × ${s.qty} ${label}`;
     });
