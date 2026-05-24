@@ -49,6 +49,14 @@
     width: 36px; height: 36px; border-radius: 8px; cursor: pointer;
     display: flex; align-items: center; justify-content: center; font-size: 18px;
   }
+  .btn-header-action {
+    background: var(--green); color: #1a1a2e;
+    border: none; border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 14px; font-weight: 700;
+    cursor: pointer;
+  }
+  .btn-header-action:active { opacity: 0.85; }
 
   /* Screens — bottom padding clears nav-tabs AND a stacked save bar */
   .screen { display: none; padding-bottom: calc(140px + env(safe-area-inset-bottom)); }
@@ -404,8 +412,7 @@
     <div class="section-title">Order Suggestions</div>
     <div id="orderList"></div>
     <div class="save-bar with-tabs" id="orderSaveBar" style="display:none">
-      <button class="btn-secondary" onclick="copyOrder()">Copy</button>
-      <button class="btn-save" onclick="sendOrder()">Send order</button>
+      <button class="btn-secondary" style="flex:1" onclick="copyOrder()">Copy order to clipboard</button>
     </div>
   </div>
 
@@ -910,6 +917,15 @@ function renderOrders() {
   }
 
   document.getElementById('orderList').innerHTML = html;
+  setOrderHeaderActions(hasOrders);
+}
+
+function setOrderHeaderActions(hasOrders) {
+  const r = document.getElementById('headerRight');
+  if (!r) return;
+  r.innerHTML = hasOrders
+    ? `<button class="btn-header-action" onclick="sendOrder()">Send</button>`
+    : '';
 }
 
 function updateOrderQty(drinkId, val) {
@@ -1132,6 +1148,9 @@ function showScreen(name) {
   const navTabs = document.getElementById('navTabs');
 
   countSaveBar.style.display = 'none';
+  // Reset header-right slot on every screen change. Each screen owns
+  // its own header actions (currently only Order populates this).
+  document.getElementById('headerRight').innerHTML = '';
 
   if (name === 'home') {
     document.getElementById('homeScreen').classList.add('active');
