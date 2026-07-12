@@ -1297,6 +1297,26 @@ function toast(msg) {
 
 // ── Boot ──
 init();
+
+// ── Service worker registration ──
+// Auto-updates the PWA on the crew's home screen: every launch pulls the
+// latest HTML if it's changed (etag-revalidated), so pushes here reach
+// their phones without them having to fully close/reopen.
+// Escape hatch: open the URL with ?nosw=1 to unregister + clear caches.
+if ('serviceWorker' in navigator) {
+  if (location.search.includes('nosw=1')) {
+    navigator.serviceWorker.getRegistrations().then(async regs => {
+      for (const r of regs) await r.unregister();
+      const keys = await caches.keys();
+      await Promise.all(keys.map(k => caches.delete(k)));
+      alert('Service worker cleared. Reload the page to fetch a fresh copy.');
+    });
+  } else {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(err => console.warn('SW registration failed', err));
+    });
+  }
+}
 </script>
 </body>
 </html>
