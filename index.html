@@ -254,7 +254,8 @@
   }
   .order-name {
     flex: 1; font-size: 15px; font-weight: 600; min-width: 0;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    /* Let long names wrap so the variety shows (e.g. "Knappstein Clare Valley Riesling") */
+    overflow-wrap: anywhere; line-height: 1.25;
   }
   .order-controls { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
   .order-x { color: var(--text-dim); font-size: 14px; }
