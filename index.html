@@ -286,6 +286,28 @@
     max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
 
+  /* Distributor sections on the Order page */
+  .dist-section { margin: 20px 16px 24px; }
+  .dist-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 6px 4px 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    margin-bottom: 4px;
+  }
+  .dist-name {
+    font-size: 13px; font-weight: 800; color: var(--accent);
+    text-transform: uppercase; letter-spacing: 0.6px;
+  }
+  .dist-count { font-size: 12px; color: var(--text-dim); font-weight: 500; }
+  .dist-actions {
+    display: flex; gap: 10px; margin-top: 14px;
+  }
+  .dist-actions .btn-secondary { flex: 1; padding: 12px; font-size: 14px; }
+  .dist-actions .btn-save { flex: 2; padding: 12px; font-size: 15px; }
+  .dist-section .order-row {
+    margin: 6px 0;
+  }
+
   /* Par-levels editor */
   .par-cat-label {
     font-size: 11px; font-weight: 700; color: var(--accent);
@@ -415,10 +437,6 @@
   <div class="screen" id="orderScreen">
     <div class="section-title">Order Suggestions</div>
     <div id="orderList"></div>
-    <div class="save-bar with-tabs" id="orderSaveBar" style="display:none">
-      <button class="btn-secondary" onclick="copyOrder()">Copy</button>
-      <button class="btn-save" onclick="sendOrder()">Send order</button>
-    </div>
   </div>
 
   <!-- PARS SCREEN -->
@@ -896,17 +914,33 @@ function toggleRestockLoc(locId) {
   document.getElementById(`restock-loc-${locId}`).classList.toggle('open');
 }
 
+// ── Distributor split ──
+// Each supplier gets its own section on the Order page + its own Send/Copy.
+// Add or move a category by editing distributorFor() below.
+const DISTRIBUTORS = [
+  { key: 'Winnellie', name: 'Winnellie', greeting: "G'day Tony," },
+  { key: 'Bidfood',   name: 'Bidfood',   greeting: "G'day," },
+  { key: 'Top End',   name: 'Top End',   greeting: "G'day," }
+];
+function distributorFor(drink) {
+  const cat = drink.category || '';
+  const sub = drink.sub_category || '';
+  if (sub === 'Top End') return 'Top End';
+  if (['Beer','Cider','Red Wine','White Wine','Sparkling','Spirit','Pre-Mixed','Cocktail Mixer'].includes(cat)) {
+    return 'Winnellie';
+  }
+  return 'Bidfood';
+}
+
 // ── Order view ──
 function renderOrders() {
   // Order is triggered when Store Room count drops a FULL unit below par.
-  // Each row is a single line: name × [qty] [pack picker ▼].
-  // The pack options for each row come from THAT drink's data
-  // (store_room_unit + fridge_unit + pack_size + conversion_factor).
+  // Rows are grouped into distributor sections, each with its own Send/Copy.
   const storeRoomId = 5;
   const storeRoomPars = pars.filter(p => p.location_id === storeRoomId && p.par_level > 0);
-  let html = '';
-  let hasOrders = false;
   orderState = {};
+  const byDist = {};
+  DISTRIBUTORS.forEach(d => { byDist[d.key] = []; });
 
   storeRoomPars.forEach(par => {
     const key = `${par.drink_id}-${storeRoomId}`;
@@ -918,49 +952,65 @@ function renderOrders() {
 
     const drink = drinks.find(d => d.id === par.drink_id);
     if (!drink) return;
-    hasOrders = true;
 
     const desc = packDescriptors(drink);
-    // Last-used pack for this drink; fall back to the data-driven default.
     let packKey = lastPackKey(drink.id) || desc.defaultKey;
     if (!desc.options.some(o => o.key === packKey)) packKey = desc.defaultKey;
     const pack = desc.options.find(o => o.key === packKey);
 
     // Pieces needed = deficit (in store-room units) × conversion_factor.
-    // Example: Corona deficit=2 cartons, conv=24 → 48 bottles short.
-    // Wine deficit=10 bottles, conv=1 → 10 bottles short.
     const piecesNeeded = Math.ceil(deficit) * (drink.conversion_factor || 1);
     const qty = Math.max(1, Math.ceil(piecesNeeded / pack.pieces));
 
     orderState[drink.id] = { qty, packKey, drinkName: drink.name, options: desc.options };
 
-    const optsHtml = desc.options.map(o =>
-      `<option value="${o.key}"${o.key === packKey ? ' selected' : ''}>${o.label}</option>`
-    ).join('');
-    const showPicker = desc.options.length > 1;
-    const packCell = showPicker
-      ? `<select class="order-pack" onchange="updateOrderPack(${drink.id}, this.value)">${optsHtml}</select>`
-      : `<span class="order-pack-static">${pack.label}</span>`;
-
-    html += `
-      <div class="order-row" id="order-row-${drink.id}">
-        <div class="order-name">${drink.name}</div>
-        <div class="order-controls">
-          <span class="order-x">×</span>
-          <input class="order-qty" type="number" inputmode="numeric" min="0" value="${qty}"
-                 onfocus="this.select()"
-                 onchange="updateOrderQty(${drink.id}, this.value)">
-          ${packCell}
-        </div>
-      </div>
-    `;
+    const distKey = distributorFor(drink);
+    if (!byDist[distKey]) byDist[distKey] = [];
+    byDist[distKey].push({ drink, qty, packKey });
   });
 
-  if (!hasOrders) {
+  const totalItems = Object.values(byDist).reduce((n, list) => n + list.length, 0);
+  let html = '';
+
+  if (totalItems === 0) {
     html = `<div class="empty-state"><div class="icon">👍</div>Store room is stocked — no orders needed</div>`;
-    document.getElementById('orderSaveBar').style.display = 'none';
   } else {
-    document.getElementById('orderSaveBar').style.display = 'flex';
+    DISTRIBUTORS.forEach(dist => {
+      const items = byDist[dist.key] || [];
+      if (items.length === 0) return;
+      html += `<div class="dist-section">
+        <div class="dist-header">
+          <span class="dist-name">${dist.name}</span>
+          <span class="dist-count">${items.length} ${items.length === 1 ? 'item' : 'items'}</span>
+        </div>`;
+      items.forEach(({ drink, qty, packKey }) => {
+        const desc = packDescriptors(drink);
+        const pack = desc.options.find(o => o.key === packKey);
+        const optsHtml = desc.options.map(o =>
+          `<option value="${o.key}"${o.key === packKey ? ' selected' : ''}>${o.label}</option>`
+        ).join('');
+        const showPicker = desc.options.length > 1;
+        const packCell = showPicker
+          ? `<select class="order-pack" onchange="updateOrderPack(${drink.id}, this.value)">${optsHtml}</select>`
+          : `<span class="order-pack-static">${pack.label}</span>`;
+        html += `
+          <div class="order-row" id="order-row-${drink.id}">
+            <div class="order-name">${drink.name}</div>
+            <div class="order-controls">
+              <span class="order-x">×</span>
+              <input class="order-qty" type="number" inputmode="numeric" min="0" value="${qty}"
+                     onfocus="this.select()"
+                     onchange="updateOrderQty(${drink.id}, this.value)">
+              ${packCell}
+            </div>
+          </div>
+        `;
+      });
+      html += `<div class="dist-actions">
+        <button class="btn-secondary" onclick="copyDistOrder('${dist.key}')">Copy</button>
+        <button class="btn-save" onclick="sendDistOrder('${dist.key}')">Send ${dist.name}</button>
+      </div></div>`;
+    });
   }
 
   document.getElementById('orderList').innerHTML = html;
@@ -1004,9 +1054,15 @@ async function saveOrders() {
   });
 }
 
-function buildOrderText() {
+function buildDistOrderText(distKey) {
+  const dist = DISTRIBUTORS.find(d => d.key === distKey);
+  if (!dist) return '';
   const lines = Object.entries(orderState)
     .filter(([_, s]) => s.qty > 0)
+    .filter(([id]) => {
+      const drink = drinks.find(d => d.id === parseInt(id));
+      return drink && distributorFor(drink) === distKey;
+    })
     .map(([_, s]) => {
       const pack = s.options.find(o => o.key === s.packKey) || s.options[0];
       const label = s.qty === 1 ? pack.singular : pack.plural;
@@ -1014,19 +1070,18 @@ function buildOrderText() {
     });
   if (lines.length === 0) return '';
   const dateStr = formatDeliveryDate(deliveryDate);
-  return `G'day Tony,\nCape Adieu drinks order;\nDelivery on ${dateStr}:\n\n${lines.join('\n')}\n\nthanks.`;
+  return `${dist.greeting}\nCape Adieu drinks order;\nDelivery on ${dateStr}:\n\n${lines.join('\n')}\n\nthanks.`;
 }
 
-async function sendOrder() {
-  const text = buildOrderText();
+async function sendDistOrder(distKey) {
+  const text = buildDistOrderText(distKey);
   if (!text) { toast('Nothing to order'); return; }
-  // Save to DB silently first
+  // Save all edits to DB silently first
   try { await saveOrders(); } catch (e) { console.error('Save failed', e); }
   // Try Web Share API (iOS share sheet includes Messages, Mail, etc.)
   if (navigator.share) {
     try {
-      await navigator.share({ text, title: 'Cape Adieu drinks order' });
-      toast('Order sent');
+      await navigator.share({ text, title: `Cape Adieu drinks order — ${distKey}` });
       return;
     } catch (e) {
       if (e && e.name === 'AbortError') return; // user cancelled
@@ -1037,8 +1092,8 @@ async function sendOrder() {
   window.location.href = `sms:?&body=${encodeURIComponent(text)}`;
 }
 
-async function copyOrder() {
-  const text = buildOrderText();
+async function copyDistOrder(distKey) {
+  const text = buildDistOrderText(distKey);
   if (!text) { toast('Nothing to order'); return; }
   try {
     await navigator.clipboard.writeText(text);
@@ -1182,7 +1237,6 @@ function showScreen(name) {
   document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
 
   const countSaveBar = document.getElementById('countSaveBar');
-  const orderSaveBar = document.getElementById('orderSaveBar');
   const navTabs = document.getElementById('navTabs');
 
   countSaveBar.style.display = 'none';
